@@ -14,8 +14,9 @@ categories = ["web-programming::http-server"]
 travis-ci = { repository = "GREsau/rocket-lamb" }
 
 [dependencies]
-rocket = { version = "0.4.0", default-features = false }
-lambda_runtime = "0.2.1"
-lambda_http = "0.1.1"
-http = "0.1"
+rocket = { git = "https://github.com/SergioBenitez/Rocket", branch = "master" }
+lamedh_runtime = "0.3.0"
+lamedh_http = "0.3.0"
+http = "0.2.3"
 failure = "0.1.5"
+aws_lambda_events = "0.4.0"

@@ -1,6 +1,7 @@
 use crate::config::*;
 use crate::handler::{LazyClient, RocketHandler};
-use lambda_http::lambda;
+use lamedh_http::handler;
+use lamedh_runtime::run;
 use rocket::Rocket;
 
 /// A builder to create and configure a [RocketHandler](RocketHandler).
@@ -34,10 +35,11 @@ impl RocketHandlerBuilder {
     ///
     /// ```rust,no_run
     /// use rocket_lamb::RocketExt;
-    /// use lambda_http::lambda;
+    /// use lamedh_runtime::run;
+    /// use lamedh_http::handler;
     ///
-    /// let handler = rocket::ignite().lambda().into_handler();
-    /// lambda!(handler);
+    /// let rocket_handler = rocket::ignite().lambda().into_handler();
+    /// run(handler(rocket_handler));
     /// ```
     pub fn into_handler(self) -> RocketHandler {
         RocketHandler {
@@ -58,12 +60,12 @@ impl RocketHandlerBuilder {
     ///
     /// ```rust,no_run
     /// use rocket_lamb::RocketExt;
-    /// use lambda_http::lambda;
+    /// use lambda_http::lambda::lambda;
     ///
     /// rocket::ignite().lambda().launch();
     /// ```
     pub fn launch(self) -> ! {
-        lambda!(self.into_handler());
+        run(handler(self.into_handler()));
         unreachable!("lambda! should loop forever (or panic)")
     }
 

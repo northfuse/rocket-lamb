@@ -1,12 +1,15 @@
 use crate::config::*;
 use crate::error::RocketLambError;
 use crate::request_ext::RequestExt as _;
-use lambda_http::{Body, Handler, Request, RequestExt, Response};
-use lambda_runtime::{error::HandlerError, Context};
+use aws_lambda_events::encodings::Body;
+use lamedh_http::{Handler, Request, RequestExt, Response};
+use lamedh_runtime::Context;
 use rocket::http::{uri::Uri, Header};
-use rocket::local::{Client, LocalRequest, LocalResponse};
+use rocket::local::blocking::{Client, LocalRequest, LocalResponse};
 use rocket::{Rocket, Route};
+use std::future::Future;
 use std::mem;
+use std::pin::Pin;
 
 /// A Lambda handler for API Gateway events that processes requests using a [Rocket](rocket::Rocket) instance.
 pub struct RocketHandler {
@@ -20,12 +23,20 @@ pub(super) enum LazyClient {
     Ready(Client),
 }
 
-impl Handler<Response<Body>> for RocketHandler {
-    fn run(&mut self, req: Request, _ctx: Context) -> Result<Response<Body>, HandlerError> {
+impl Handler for RocketHandler {
+    type Error = failure::Error;
+    type Response = Response<Body>;
+    type Fut = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + 'static>>;
+
+    fn call(&mut self, req: Request, _ctx: Context) -> Self::Fut {
         self.ensure_client_ready(&req);
-        self.process_request(req)
-            .map_err(failure::Error::from)
-            .map_err(failure::Error::into)
+        let fut = async {
+            process_request(self, req)
+                .await
+                .map_err(failure::Error::from)
+                .map_err(failure::Error::into)
+        };
+        Box::pin(fut)
     }
 }
 
@@ -60,69 +71,6 @@ impl RocketHandler {
         }
     }
 
-    fn process_request(&self, req: Request) -> Result<Response<Body>, RocketLambError> {
-        let local_req = self.create_rocket_request(req)?;
-        let local_res = local_req.dispatch();
-        self.create_lambda_response(local_res)
-    }
-
-    fn create_rocket_request(&self, req: Request) -> Result<LocalRequest, RocketLambError> {
-        let method = to_rocket_method(req.method())?;
-        let uri = self.get_path_and_query(&req);
-        let mut local_req = self.client().req(method, uri);
-        for (name, value) in req.headers() {
-            match value.to_str() {
-                Ok(v) => local_req.add_header(Header::new(name.to_string(), v.to_string())),
-                Err(_) => return Err(invalid_request!("invalid value for header '{}'", name)),
-            }
-        }
-        local_req.set_body(req.into_body());
-        Ok(local_req)
-    }
-
-    fn create_lambda_response(
-        &self,
-        mut local_res: LocalResponse,
-    ) -> Result<Response<Body>, RocketLambError> {
-        let mut builder = Response::builder();
-        builder.status(local_res.status().code);
-        for h in local_res.headers().iter() {
-            builder.header(&h.name.to_string(), &h.value.to_string());
-        }
-
-        let response_type = local_res
-            .headers()
-            .get_one("content-type")
-            .unwrap_or_default()
-            .split(';')
-            .next()
-            .and_then(|ct| self.config.response_types.get(&ct.to_lowercase()))
-            .copied()
-            .unwrap_or(self.config.default_response_type);
-        let body = match (local_res.body(), response_type) {
-            (Some(b), ResponseType::Auto) => {
-                let bytes = b
-                    .into_bytes()
-                    .ok_or_else(|| invalid_response!("failed to read response body"))?;
-                match String::from_utf8(bytes) {
-                    Ok(s) => Body::Text(s),
-                    Err(e) => Body::Binary(e.into_bytes()),
-                }
-            }
-            (Some(b), ResponseType::Text) => Body::Text(
-                b.into_string()
-                    .ok_or_else(|| invalid_response!("failed to read response body as UTF-8"))?,
-            ),
-            (Some(b), ResponseType::Binary) => Body::Binary(
-                b.into_bytes()
-                    .ok_or_else(|| invalid_response!("failed to read response body"))?,
-            ),
-            (None, _) => Body::Empty,
-        };
-
-        builder.body(body).map_err(|e| invalid_response!("{}", e))
-    }
-
     fn get_path_and_query(&self, req: &Request) -> String {
         let mut uri = match self.config.base_path_behaviour {
             BasePathBehaviour::Include | BasePathBehaviour::RemountAndInclude => req.full_path(),
@@ -144,6 +92,69 @@ impl RocketHandler {
         }
         uri
     }
+}
+
+async fn process_request(
+    handler: &RocketHandler,
+    req: Request,
+) -> Result<Response<Body>, RocketLambError> {
+    let local_req = create_rocket_request(handler, req)?;
+    let local_res = local_req.dispatch();
+    create_lambda_response(handler, local_res).await
+}
+
+fn create_rocket_request(
+    handler: &RocketHandler,
+    req: Request,
+) -> Result<LocalRequest, RocketLambError> {
+    let method = to_rocket_method(req.method())?;
+    let uri = handler.get_path_and_query(&req);
+    let mut local_req = handler.client().req(method, uri);
+    for (name, value) in req.headers() {
+        match value.to_str() {
+            Ok(v) => local_req.add_header(Header::new(name.to_string(), v.to_string())),
+            Err(_) => return Err(invalid_request!("invalid value for header '{}'", name)),
+        }
+    }
+    local_req.set_body(req.into_body());
+    Ok(local_req)
+}
+
+async fn create_lambda_response(
+    handler: &RocketHandler,
+    local_res: LocalResponse<'_>,
+) -> Result<Response<Body>, RocketLambError> {
+    let mut builder = Response::builder();
+    builder = builder.status(local_res.status().code);
+    for h in local_res.headers().iter() {
+        builder = builder.header(&h.name.to_string(), &h.value.to_string());
+    }
+
+    let response_type = local_res
+        .headers()
+        .get_one("content-type")
+        .unwrap_or_default()
+        .split(';')
+        .next()
+        .and_then(|ct| handler.config.response_types.get(&ct.to_lowercase()))
+        .copied()
+        .unwrap_or(handler.config.default_response_type);
+    let body = match local_res.into_bytes() {
+        Some(b) => match response_type {
+            ResponseType::Auto => match String::from_utf8(b) {
+                Ok(s) => Body::Text(s),
+                Err(e) => Body::Binary(e.into_bytes()),
+            },
+            ResponseType::Text => Body::Text(
+                String::from_utf8(b)
+                    .map_err(|_| invalid_response!("failed to read response body as UTF-8"))?,
+            ),
+            ResponseType::Binary => Body::Binary(b),
+        },
+        None => Body::Empty,
+    };
+
+    builder.body(body).map_err(|e| invalid_response!("{}", e))
 }
 
 fn to_rocket_method(method: &http::Method) -> Result<rocket::http::Method, RocketLambError> {
