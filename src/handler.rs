@@ -5,7 +5,7 @@ use aws_lambda_events::encodings::Body;
 use lamedh_http::{Handler, Request, RequestExt, Response};
 use lamedh_runtime::Context;
 use rocket::http::{uri::Uri, Header};
-use rocket::local::blocking::{Client, LocalRequest, LocalResponse};
+use rocket::local::asynchronous::{Client, LocalRequest, LocalResponse};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -63,7 +63,7 @@ async fn process_request(
     req: Request,
 ) -> Result<Response<Body>, RocketLambError> {
     let local_req = create_rocket_request(&client, Arc::clone(&config), req)?;
-    let local_res = local_req.dispatch();
+    let local_res = local_req.dispatch().await;
     create_lambda_response(config, local_res).await
 }
 
@@ -104,7 +104,7 @@ async fn create_lambda_response(
         .and_then(|ct| config.response_types.get(&ct.to_lowercase()))
         .copied()
         .unwrap_or(config.default_response_type);
-    let body = match local_res.into_bytes() {
+    let body = match local_res.into_bytes().await {
         Some(b) => match response_type {
             ResponseType::Auto => match String::from_utf8(b) {
                 Ok(s) => Body::Text(s),

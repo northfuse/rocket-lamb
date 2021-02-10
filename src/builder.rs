@@ -2,7 +2,7 @@ use crate::config::*;
 use crate::handler::RocketHandler;
 use lamedh_http::handler;
 use lamedh_runtime::run;
-use rocket::local::blocking::Client;
+use rocket::local::asynchronous::Client;
 use rocket::Rocket;
 use std::sync::Arc;
 
@@ -43,9 +43,9 @@ impl RocketHandlerBuilder {
     /// let rocket_handler = rocket::ignite().lambda().into_handler();
     /// run(handler(rocket_handler));
     /// ```
-    pub fn into_handler(self) -> RocketHandler {
+    pub async fn into_handler(self) -> RocketHandler {
         // TODO: Change this to async Client?
-        let client = Arc::new(Client::untracked(self.rocket).unwrap());
+        let client = Arc::new(Client::untracked(self.rocket).await.unwrap());
         RocketHandler {
             client,
             config: Arc::new(self.config),
@@ -69,7 +69,7 @@ impl RocketHandlerBuilder {
     /// rocket::ignite().lambda().launch();
     /// ```
     pub async fn launch(self) -> ! {
-        run(handler(self.into_handler())).await.unwrap();
+        run(handler(self.into_handler().await)).await.unwrap();
         unreachable!("lambda! should loop forever (or panic)")
     }
 

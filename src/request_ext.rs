@@ -66,21 +66,21 @@ fn is_default_api_gateway_url(req: &Request) -> bool {
         .unwrap_or(false)
 }
 
-fn populate_resource_path(req: &Request, resource_path: String) -> String {
-    let path_parameters = req.path_parameters();
-    resource_path
-        .split('/')
-        .map(|segment| {
-            if segment.starts_with('{') {
-                let end = if segment.ends_with("+}") { 2 } else { 1 };
-                let param = &segment[1..segment.len() - end];
-                path_parameters
-                    .get(param)
-                    .unwrap_or_else(|| panic!("Could not find path parameter '{}'.", param))
-            } else {
-                segment
-            }
-        })
-        .collect::<Vec<&str>>()
-        .join("/")
-}
+// fn populate_resource_path(req: &Request, resource_path: String) -> String {
+//     let path_parameters = req.path_parameters();
+//     resource_path
+//         .split('/')
+//         .map(|segment| {
+//             if segment.starts_with('{') {
+//                 let end = if segment.ends_with("+}") { 2 } else { 1 };
+//                 let param = &segment[1..segment.len() - end];
+//                 path_parameters
+//                     .get(param)
+//                     .unwrap_or_else(|| panic!("Could not find path parameter '{}'.", param))
+//             } else {
+//                 segment
+//             }
+//         })
+//         .collect::<Vec<&str>>()
+//         .join("/")
+// }

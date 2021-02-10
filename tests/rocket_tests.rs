@@ -1,9 +1,8 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
 #[macro_use]
 extern crate rocket;
 
-use lamedh_http::{Body, Handler, Request, Response};
+use aws_lambda_events::encodings::Body;
+use lamedh_http::{Handler, Request, Response};
 use lamedh_runtime::Context;
 use rocket_lamb::{ResponseType, RocketExt};
 use std::error::Error;
@@ -40,7 +39,7 @@ fn get_request(json_file: &'static str) -> Result<Request, Box<dyn Error>> {
 
 #[tokio::test]
 async fn ok_auto_text() -> Result<(), Box<dyn Error>> {
-    let mut handler = make_rocket().lambda().into_handler();
+    let mut handler = make_rocket().lambda().into_handler().await;
 
     let req = get_request("upper")?;
     let res = handler.call(req, Context::default()).await?;
@@ -53,7 +52,7 @@ async fn ok_auto_text() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn ok_auto_binary() -> Result<(), Box<dyn Error>> {
-    let mut handler = make_rocket().lambda().into_handler();
+    let mut handler = make_rocket().lambda().into_handler().await;
 
     let req = get_request("binary")?;
     let res = handler.call(req, Context::default()).await?;
@@ -69,7 +68,7 @@ async fn ok_default_binary() -> Result<(), Box<dyn Error>> {
     let mut handler = make_rocket()
         .lambda()
         .default_response_type(ResponseType::Binary)
-        .into_handler();
+        .into_handler().await;
 
     let req = get_request("upper")?;
     let res = handler.call(req, Context::default()).await?;
@@ -88,7 +87,7 @@ async fn ok_type_binary() -> Result<(), Box<dyn Error>> {
     let mut handler = make_rocket()
         .lambda()
         .response_type("TEXT/PLAIN", ResponseType::Binary)
-        .into_handler();
+        .into_handler().await;
 
     let req = get_request("upper")?;
     let res = handler.call(req, Context::default()).await?;
@@ -104,7 +103,7 @@ async fn ok_type_binary() -> Result<(), Box<dyn Error>> {
 
 #[tokio::test]
 async fn request_not_found() -> Result<(), Box<dyn Error>> {
-    let mut handler = make_rocket().lambda().into_handler();
+    let mut handler = make_rocket().lambda().into_handler().await;
 
     let req = get_request("not_found")?;
     let res = handler.call(req, Context::default()).await?;

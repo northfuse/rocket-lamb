@@ -1,9 +1,8 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
 #[macro_use]
 extern crate rocket;
 
-use lamedh_http::{Body, Handler, Request};
+use aws_lambda_events::encodings::Body;
+use lamedh_http::{Handler, Request};
 use lamedh_runtime::Context;
 use rocket::http::uri::Origin;
 use rocket_lamb::{BasePathBehaviour, RocketExt};
@@ -41,7 +40,7 @@ macro_rules! test_case {
             let mut handler = make_rocket()
                 .lambda()
                 .base_path_behaviour(BasePathBehaviour::$path_behaviour)
-                .into_handler();
+                .into_handler().await;
 
             let req = get_request($file)?;
             let res = handler.call(req, Context::default()).await?;
