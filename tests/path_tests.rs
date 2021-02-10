@@ -3,8 +3,8 @@
 #[macro_use]
 extern crate rocket;
 
-use lambda_http::{Body, Handler, Request};
-use lambda_runtime::Context;
+use lamedh_http::{Body, Handler, Request};
+use lamedh_runtime::Context;
 use rocket::http::uri::Origin;
 use rocket_lamb::{BasePathBehaviour, RocketExt};
 use std::error::Error;
@@ -28,7 +28,7 @@ fn make_rocket() -> rocket::Rocket {
 
 fn get_request(json_file: &str) -> Result<Request, Box<dyn Error>> {
     let file = File::open(format!("tests/requests/{}.json", json_file))?;
-    Ok(lambda_http::request::from_reader(file)?)
+    Ok(lamedh_http::request::from_reader(file)?)
 }
 
 macro_rules! test_case {
@@ -36,15 +36,15 @@ macro_rules! test_case {
         test_case!($name, RemountAndInclude, $file, $status, $path);
     };
     ($name:ident, $path_behaviour:ident, $file:expr, $status:expr, $path:expr) => {
-        #[test]
-        fn $name() -> Result<(), Box<dyn Error>> {
+        #[tokio::test]
+        async fn $name() -> Result<(), Box<dyn Error>> {
             let mut handler = make_rocket()
                 .lambda()
                 .base_path_behaviour(BasePathBehaviour::$path_behaviour)
                 .into_handler();
 
             let req = get_request($file)?;
-            let res = handler.call(req, Context::default())?;
+            let res = handler.call(req, Context::default()).await?;
 
             assert_eq!(res.status(), $status);
             assert_eq!(*res.body(), Body::Text($path.to_string()));
