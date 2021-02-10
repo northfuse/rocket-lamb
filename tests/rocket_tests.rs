@@ -5,6 +5,7 @@ extern crate rocket;
 
 use lambda_http::{Body, Handler, Request, Response};
 use lambda_runtime::Context;
+use lamedh_http::Handler;
 use rocket_lamb::{ResponseType, RocketExt};
 use std::error::Error;
 use std::fs::File;
@@ -43,7 +44,7 @@ fn ok_auto_text() -> Result<(), Box<dyn Error>> {
     let mut handler = make_rocket().lambda().into_handler();
 
     let req = get_request("upper")?;
-    let res = handler.run(req, Context::default())?;
+    let res = handler.call(req, Context::default())?;
 
     assert_eq!(res.status(), 200);
     assert_header(&res, "content-type", "text/plain; charset=utf-8");
@@ -56,7 +57,7 @@ fn ok_auto_binary() -> Result<(), Box<dyn Error>> {
     let mut handler = make_rocket().lambda().into_handler();
 
     let req = get_request("binary")?;
-    let res = handler.run(req, Context::default())?;
+    let res = handler.call(req, Context::default())?;
 
     assert_eq!(res.status(), 200);
     assert_header(&res, "content-type", "application/octet-stream");
@@ -72,7 +73,7 @@ fn ok_default_binary() -> Result<(), Box<dyn Error>> {
         .into_handler();
 
     let req = get_request("upper")?;
-    let res = handler.run(req, Context::default())?;
+    let res = handler.call(req, Context::default())?;
 
     assert_eq!(res.status(), 200);
     assert_header(&res, "content-type", "text/plain; charset=utf-8");
@@ -91,7 +92,7 @@ fn ok_type_binary() -> Result<(), Box<dyn Error>> {
         .into_handler();
 
     let req = get_request("upper")?;
-    let res = handler.run(req, Context::default())?;
+    let res = handler.call(req, Context::default())?;
 
     assert_eq!(res.status(), 200);
     assert_header(&res, "content-type", "text/plain; charset=utf-8");
@@ -107,7 +108,7 @@ fn request_not_found() -> Result<(), Box<dyn Error>> {
     let mut handler = make_rocket().lambda().into_handler();
 
     let req = get_request("not_found")?;
-    let res = handler.run(req, Context::default())?;
+    let res = handler.call(req, Context::default())?;
 
     assert_eq!(res.status(), 404);
     assert_eq!(res.headers().contains_key("content-type"), false);

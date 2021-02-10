@@ -44,7 +44,7 @@ macro_rules! test_case {
                 .into_handler();
 
             let req = get_request($file)?;
-            let res = handler.run(req, Context::default())?;
+            let res = handler.call(req, Context::default())?;
 
             assert_eq!(res.status(), $status);
             assert_eq!(*res.body(), Body::Text($path.to_string()));

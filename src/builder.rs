@@ -1,8 +1,10 @@
 use crate::config::*;
-use crate::handler::{LazyClient, RocketHandler};
+use crate::handler::RocketHandler;
 use lamedh_http::handler;
 use lamedh_runtime::run;
+use rocket::local::blocking::Client;
 use rocket::Rocket;
+use std::sync::Arc;
 
 /// A builder to create and configure a [RocketHandler](RocketHandler).
 pub struct RocketHandlerBuilder {
@@ -42,9 +44,11 @@ impl RocketHandlerBuilder {
     /// run(handler(rocket_handler));
     /// ```
     pub fn into_handler(self) -> RocketHandler {
+        // TODO: Change this to async Client?
+        let client = Arc::new(Client::untracked(self.rocket).unwrap());
         RocketHandler {
-            client: LazyClient::Uninitialized(self.rocket),
-            config: self.config,
+            client,
+            config: Arc::new(self.config),
         }
     }
 
@@ -64,8 +68,8 @@ impl RocketHandlerBuilder {
     ///
     /// rocket::ignite().lambda().launch();
     /// ```
-    pub fn launch(self) -> ! {
-        run(handler(self.into_handler()));
+    pub async fn launch(self) -> ! {
+        run(handler(self.into_handler())).await.unwrap();
         unreachable!("lambda! should loop forever (or panic)")
     }
 
