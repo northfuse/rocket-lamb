@@ -1,10 +1,13 @@
-use crate::config::*;
-use crate::handler::RocketHandler;
+use std::sync::Arc;
+
 use lamedh_http::handler;
 use lamedh_runtime::run;
-use rocket::local::asynchronous::Client;
 use rocket::Rocket;
-use std::sync::Arc;
+
+use crate::config::*;
+use crate::handler::RocketHandler;
+use crate::LazyClient;
+use parking_lot::Mutex;
 
 /// A builder to create and configure a [RocketHandler](RocketHandler).
 pub struct RocketHandlerBuilder {
@@ -40,14 +43,12 @@ impl RocketHandlerBuilder {
     /// use lamedh_runtime::run;
     /// use lamedh_http::handler;
     ///
-    /// let rocket_handler = rocket::ignite().lambda().into_handler();
+    /// let rocket_handler = tokio_test::block_on(rocket::ignite().lambda().into_handler());
     /// run(handler(rocket_handler));
     /// ```
     pub async fn into_handler(self) -> RocketHandler {
-        // TODO: Change this to async Client?
-        let client = Arc::new(Client::untracked(self.rocket).await.unwrap());
         RocketHandler {
-            client,
+            lazy_client: Arc::new(Mutex::new(LazyClient::Uninitialized(Some(self.rocket)))),
             config: Arc::new(self.config),
         }
     }
@@ -64,9 +65,9 @@ impl RocketHandlerBuilder {
     ///
     /// ```rust,no_run
     /// use rocket_lamb::RocketExt;
-    /// use lambda_http::lambda::lambda;
+    /// use lamedh_http::lambda::lambda;
     ///
-    /// rocket::ignite().lambda().launch();
+    /// tokio_test::block_on(rocket::ignite().lambda().launch());
     /// ```
     pub async fn launch(self) -> ! {
         run(handler(self.into_handler().await)).await.unwrap();

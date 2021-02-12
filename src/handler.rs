@@ -1,19 +1,28 @@
-use crate::config::*;
-use crate::error::RocketLambError;
-use crate::request_ext::RequestExt as _;
-use aws_lambda_events::encodings::Body;
-use lamedh_http::{Handler, Request, RequestExt, Response};
-use lamedh_runtime::Context;
-use rocket::http::{uri::Uri, Header};
-use rocket::local::asynchronous::{Client, LocalRequest, LocalResponse};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use aws_lambda_events::encodings::Body;
+use lamedh_http::{Handler, Request, RequestExt, Response};
+use lamedh_runtime::Context;
+use parking_lot::Mutex;
+use rocket::http::{uri::Uri, Header};
+use rocket::local::asynchronous::{Client, LocalRequest, LocalResponse};
+use rocket::{Rocket, Route};
+
+use crate::config::*;
+use crate::error::RocketLambError;
+use crate::request_ext::RequestExt as _;
+
 /// A Lambda handler for API Gateway events that processes requests using a [Rocket](rocket::Rocket) instance.
 pub struct RocketHandler {
-    pub(super) client: Arc<Client>,
+    pub(super) lazy_client: Arc<Mutex<LazyClient>>,
     pub(super) config: Arc<Config>,
+}
+
+pub(super) enum LazyClient {
+    Uninitialized(Option<Rocket>),
+    Ready(Arc<Client>),
 }
 
 impl Handler for RocketHandler {
@@ -22,10 +31,10 @@ impl Handler for RocketHandler {
     type Fut = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + 'static>>;
 
     fn call(&mut self, req: Request, _ctx: Context) -> Self::Fut {
-        let client = Arc::clone(&self.client);
         let config = Arc::clone(&self.config);
+        let lazy_client = Arc::clone(&self.lazy_client);
         let fut = async {
-            process_request(client, config, req)
+            process_request(lazy_client, config, req)
                 .await
                 .map_err(failure::Error::from)
                 .map_err(failure::Error::into)
@@ -35,10 +44,9 @@ impl Handler for RocketHandler {
 }
 
 fn get_path_and_query(config: &Config, req: &Request) -> String {
-    // TODO: Figure out base path behavior per request since the client doesn't have it now
-    let mut uri = match config.base_path_behaviour {
-        BasePathBehaviour::Include | BasePathBehaviour::RemountAndInclude => req.full_path(),
-        BasePathBehaviour::Exclude => req.api_path().to_owned(),
+    let mut uri = match &config.base_path_behaviour {
+        BasePathBehaviour::Include | BasePathBehaviour::RemountAndInclude => dbg!(req.full_path()),
+        BasePathBehaviour::Exclude => dbg!(req.api_path().to_owned()),
     };
     let query = req.query_string_parameters();
 
@@ -58,13 +66,44 @@ fn get_path_and_query(config: &Config, req: &Request) -> String {
 }
 
 async fn process_request(
-    client: Arc<Client>,
+    lazy_client: Arc<Mutex<LazyClient>>,
     config: Arc<Config>,
     req: Request,
 ) -> Result<Response<Body>, RocketLambError> {
+    let client = get_client_from_lazy(&lazy_client, &config, &req).await;
     let local_req = create_rocket_request(&client, Arc::clone(&config), req)?;
     let local_res = local_req.dispatch().await;
     create_lambda_response(config, local_res).await
+}
+
+async fn get_client_from_lazy(
+    lazy_client_lock: &Mutex<LazyClient>,
+    config: &Config,
+    req: &Request,
+) -> Arc<Client> {
+    let mut lazy_client = lazy_client_lock.lock();
+    match &mut *lazy_client {
+        LazyClient::Ready(c) => Arc::clone(&c),
+        LazyClient::Uninitialized(r) => {
+            let r = r
+                .take()
+                .expect("It should not be possible for this to be None");
+            let base_path = req.base_path();
+            let client = if config.base_path_behaviour == BasePathBehaviour::RemountAndInclude
+                && !base_path.is_empty()
+            {
+                let routes: Vec<Route> = r.routes().cloned().collect();
+                let rocket = r.mount(&base_path, routes);
+                Client::untracked(rocket).await.unwrap()
+            } else {
+                Client::untracked(r).await.unwrap()
+            };
+            let client = Arc::new(client);
+            let client_clone = Arc::clone(&client);
+            *lazy_client = LazyClient::Ready(client);
+            client_clone
+        }
+    }
 }
 
 fn create_rocket_request(

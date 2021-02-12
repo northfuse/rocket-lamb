@@ -5,7 +5,7 @@ use aws_lambda_events::encodings::Body;
 use lamedh_http::{Handler, Request};
 use lamedh_runtime::Context;
 use rocket::http::uri::Origin;
-use rocket_lamb::{BasePathBehaviour, RocketExt};
+use rocket_lamb::{BasePathBehaviour, RocketExt, RocketHandler};
 use std::error::Error;
 use std::fs::File;
 
@@ -19,10 +19,14 @@ fn get_path<'r>(origin: &'r Origin<'r>) -> &'r str {
     origin.path()
 }
 
-fn make_rocket() -> rocket::Rocket {
+async fn make_rocket(base_path_behaviour: BasePathBehaviour) -> RocketHandler {
     rocket::ignite()
         .mount("/", routes![get_path])
         .register(catchers![not_found])
+        .lambda()
+        .base_path_behaviour(base_path_behaviour)
+        .into_handler()
+        .await
 }
 
 fn get_request(json_file: &str) -> Result<Request, Box<dyn Error>> {
@@ -30,93 +34,134 @@ fn get_request(json_file: &str) -> Result<Request, Box<dyn Error>> {
     Ok(lamedh_http::request::from_reader(file)?)
 }
 
-macro_rules! test_case {
-    ($name:ident, $file:expr, $status:expr, $path:expr) => {
-        test_case!($name, RemountAndInclude, $file, $status, $path);
-    };
-    ($name:ident, $path_behaviour:ident, $file:expr, $status:expr, $path:expr) => {
-        #[tokio::test]
-        async fn $name() -> Result<(), Box<dyn Error>> {
-            let mut handler = make_rocket()
-                .lambda()
-                .base_path_behaviour(BasePathBehaviour::$path_behaviour)
-                .into_handler().await;
+#[tokio::test]
+async fn api_gateway() {
+    let mut handler = make_rocket(BasePathBehaviour::RemountAndInclude).await;
 
-            let req = get_request($file)?;
-            let res = handler.call(req, Context::default()).await?;
+    let req = get_request("path_api_gateway").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
 
-            assert_eq!(res.status(), $status);
-            assert_eq!(*res.body(), Body::Text($path.to_string()));
-            Ok(())
-        }
-    };
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/Prod/path/".to_string()));
 }
 
-test_case!(api_gateway, "path_api_gateway", 200, "/Prod/path/");
-test_case!(
-    api_gateway_include_base,
-    Include,
-    "path_api_gateway",
-    404,
-    "/Prod/path/"
-);
-test_case!(
-    api_gateway_exclude_base,
-    Exclude,
-    "path_api_gateway",
-    200,
-    "/path/"
-);
+#[tokio::test]
+async fn api_gateway_include_base() {
+    let mut handler = make_rocket(BasePathBehaviour::Include).await;
 
-test_case!(custom_domain, "path_custom_domain", 200, "/path/");
-test_case!(
-    custom_domain_include_empty_base,
-    Include,
-    "path_custom_domain",
-    200,
-    "/path/"
-);
-test_case!(
-    custom_domain_exclude_empty_base,
-    Exclude,
-    "path_custom_domain",
-    200,
-    "/path/"
-);
+    let req = get_request("path_api_gateway").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
 
-test_case!(
-    custom_domain_with_base_path,
-    "path_custom_domain_with_base",
-    200,
-    "/base-path/path/"
-);
-test_case!(
-    custom_domain_with_base_path_include,
-    Include,
-    "path_custom_domain_with_base",
-    404,
-    "/base-path/path/"
-);
-test_case!(
-    custom_domain_with_base_path_exclude,
-    Exclude,
-    "path_custom_domain_with_base",
-    200,
-    "/path/"
-);
+    assert_eq!(res.status(), 404);
+    assert_eq!(*res.body(), Body::Text("/Prod/path/".to_string()));
+}
 
-test_case!(application_load_balancer, "path_alb", 200, "/path/");
-test_case!(
-    application_load_balancer_include_empty_base,
-    Include,
-    "path_alb",
-    200,
-    "/path/"
-);
-test_case!(
-    application_load_balancer_exclude_empty_base,
-    Exclude,
-    "path_alb",
-    200,
-    "/path/"
-);
+#[tokio::test]
+async fn api_gateway_exclude_base() {
+    let mut handler = make_rocket(BasePathBehaviour::Exclude).await;
+
+    let req = get_request("path_api_gateway").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/path/".to_string()));
+}
+
+#[tokio::test]
+async fn custom_domain() {
+    let mut handler = make_rocket(BasePathBehaviour::RemountAndInclude).await;
+
+    let req = get_request("path_custom_domain").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/path/".to_string()));
+}
+
+#[tokio::test]
+async fn custom_domain_include_empty_base() {
+    let mut handler = make_rocket(BasePathBehaviour::Include).await;
+
+    let req = get_request("path_custom_domain").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/path/".to_string()));
+}
+
+#[tokio::test]
+async fn custom_domain_exclude_empty_base() {
+    let mut handler = make_rocket(BasePathBehaviour::Exclude).await;
+
+    let req = get_request("path_custom_domain").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/path/".to_string()));
+}
+
+#[tokio::test]
+async fn custom_domain_with_base_path() {
+    let mut handler = make_rocket(BasePathBehaviour::RemountAndInclude).await;
+
+    let req = get_request("path_custom_domain_with_base").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/base-path/path/".to_string()));
+}
+
+#[tokio::test]
+async fn custom_domain_with_base_path_include() {
+    let mut handler = make_rocket(BasePathBehaviour::Include).await;
+
+    let req = get_request("path_custom_domain_with_base").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 404);
+    assert_eq!(*res.body(), Body::Text("/base-path/path/".to_string()));
+}
+
+#[tokio::test]
+async fn custom_domain_with_base_path_exclude() {
+    let mut handler = make_rocket(BasePathBehaviour::Exclude).await;
+
+    let req = get_request("path_custom_domain_with_base").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/path/".to_string()));
+}
+
+#[tokio::test]
+async fn application_load_balancer() {
+    let mut handler = make_rocket(BasePathBehaviour::RemountAndInclude).await;
+
+    let req = get_request("path_alb").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/path/".to_string()));
+}
+
+#[tokio::test]
+async fn application_load_balancer_include_empty_base() {
+    let mut handler = make_rocket(BasePathBehaviour::Include).await;
+
+    let req = get_request("path_alb").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/path/".to_string()));
+}
+
+#[tokio::test]
+async fn application_load_balancer_exclude_empty_base() {
+    let mut handler = make_rocket(BasePathBehaviour::Exclude).await;
+
+    let req = get_request("path_alb").unwrap();
+    let res = handler.call(req, Context::default()).await.unwrap();
+
+    assert_eq!(res.status(), 200);
+    assert_eq!(*res.body(), Body::Text("/path/".to_string()));
+}
