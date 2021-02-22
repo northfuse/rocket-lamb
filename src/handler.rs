@@ -5,10 +5,10 @@ use std::sync::Arc;
 use aws_lambda_events::encodings::Body;
 use lamedh_http::{Handler, Request, RequestExt, Response};
 use lamedh_runtime::Context;
-use parking_lot::Mutex;
 use rocket::http::{uri::Uri, Header};
 use rocket::local::asynchronous::{Client, LocalRequest, LocalResponse};
 use rocket::{Rocket, Route};
+use tokio::sync::Mutex;
 
 use crate::config::*;
 use crate::error::RocketLambError;
@@ -81,7 +81,7 @@ async fn get_client_from_lazy(
     config: &Config,
     req: &Request,
 ) -> Arc<Client> {
-    let mut lazy_client = lazy_client_lock.lock();
+    let mut lazy_client = lazy_client_lock.lock().await;
     match &mut *lazy_client {
         LazyClient::Ready(c) => Arc::clone(&c),
         LazyClient::Uninitialized(r) => {

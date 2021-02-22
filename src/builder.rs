@@ -3,11 +3,11 @@ use std::sync::Arc;
 use lamedh_http::handler;
 use lamedh_runtime::run;
 use rocket::Rocket;
+use tokio::sync::Mutex;
 
 use crate::config::*;
 use crate::handler::RocketHandler;
 use crate::LazyClient;
-use parking_lot::Mutex;
 
 /// A builder to create and configure a [RocketHandler](RocketHandler).
 pub struct RocketHandlerBuilder {
