@@ -25,10 +25,15 @@ pub(super) enum LazyClient {
     Ready(Arc<Client>),
 }
 
+type HandlerError = failure::Error;
+type HandlerResponse = Response<Body>;
+type HandlerResult = Result<HandlerResponse, HandlerError>;
+
 impl Handler for RocketHandler {
-    type Error = failure::Error;
-    type Response = Response<Body>;
-    type Fut = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + 'static>>;
+    type Error = HandlerError;
+    type Response = HandlerResponse;
+
+    type Fut = Pin<Box<dyn Future<Output = HandlerResult> + 'static>>;
 
     fn call(&mut self, req: Request, _ctx: Context) -> Self::Fut {
         let config = Arc::clone(&self.config);

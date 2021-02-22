@@ -42,9 +42,9 @@ impl RequestExt for Request {
             RequestContext::Alb(..) => (None, None),
         };
         if is_default_api_gateway_url(self) {
-            format!("/{}", stage.unwrap_or("".to_string()))
+            format!("/{}", stage.unwrap_or_else(|| "".to_string()))
         } else {
-            let path = populate_resource_path(self, path.unwrap_or("".to_string()));
+            let path = populate_resource_path(self, path.unwrap_or_else(|| "".to_string()));
             let full_path = self.uri().path();
             let resource_path_index = full_path.rfind(&path).unwrap_or_else(|| {
                 panic!("Could not find segment '{}' in path '{}'.", path, full_path)
