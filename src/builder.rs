@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use lamedh_http::handler;
 use lamedh_runtime::run;
-use rocket::Rocket;
+use rocket::{Build, Rocket};
 use tokio::sync::Mutex;
 
 use crate::config::*;
@@ -11,7 +11,7 @@ use crate::LazyClient;
 
 /// A builder to create and configure a [RocketHandler](RocketHandler).
 pub struct RocketHandlerBuilder {
-    rocket: Rocket,
+    rocket: Rocket<Build>,
     config: Config,
 }
 
@@ -25,7 +25,7 @@ impl RocketHandlerBuilder {
     ///
     /// let builder = RocketHandlerBuilder::new(rocket::ignite());
     /// ```
-    pub fn new(rocket: rocket::Rocket) -> RocketHandlerBuilder {
+    pub fn new(rocket: Rocket<Build>) -> RocketHandlerBuilder {
         RocketHandlerBuilder {
             rocket,
             config: Config::default(),
