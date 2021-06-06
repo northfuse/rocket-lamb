@@ -5,9 +5,10 @@ use std::sync::Arc;
 use aws_lambda_events::encodings::Body;
 use lamedh_http::{Handler, Request, RequestExt, Response};
 use lamedh_runtime::Context;
-use rocket::http::{uri::Uri, Header};
+use rocket::http::Header;
+use rocket::http::RawStr;
 use rocket::local::asynchronous::{Client, LocalRequest, LocalResponse};
-use rocket::{Rocket, Route};
+use rocket::{Build, Rocket, Route};
 use tokio::sync::Mutex;
 
 use crate::config::*;
@@ -21,7 +22,7 @@ pub struct RocketHandler {
 }
 
 pub(super) enum LazyClient {
-    Uninitialized(Option<Rocket>),
+    Uninitialized(Option<Rocket<Build>>),
     Ready(Arc<Client>),
 }
 
@@ -61,8 +62,8 @@ fn get_path_and_query(config: &Config, req: &Request) -> String {
             uri.push_str(&format!(
                 "{}{}={}",
                 separator,
-                Uri::percent_encode(key),
-                Uri::percent_encode(value)
+                RawStr::new(key).percent_encode(),
+                RawStr::new(value).percent_encode()
             ));
             separator = '&';
         }

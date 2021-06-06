@@ -28,7 +28,7 @@ async fn main() {
 
 #![allow(clippy::large_enum_variant)]
 
-use rocket::Rocket;
+use rocket::{Build, Rocket};
 
 #[macro_use]
 extern crate failure;
@@ -59,7 +59,7 @@ pub trait RocketExt {
     fn lambda(self) -> RocketHandlerBuilder;
 }
 
-impl RocketExt for Rocket {
+impl RocketExt for Rocket<Build> {
     fn lambda(self) -> RocketHandlerBuilder {
         RocketHandlerBuilder::new(self)
     }
